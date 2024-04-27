@@ -19,7 +19,7 @@ class LION(object):
         self.vae = VAE(cfg).cuda()
         GlobalPrior = import_model(cfg.latent_pts.style_prior)
         global_prior = GlobalPrior(cfg.sde, cfg.latent_pts.style_dim, cfg).cuda()
-        local_prior = LocalPrior(cfg.sde, cfg.shapelatent.latent_dim, cfg).cuda()
+        local_prior = LocalPrior(cfg.sde, cfg.shapelatent.latent_dim, cfg).cuda()   # PVCNN2Prior
         self.priors = torch.nn.ModuleList([global_prior, local_prior])
         self.scheduler = DDPMScheduler(clip_sample=False,
                                        beta_start=cfg.ddpm.beta_1, beta_end=cfg.ddpm.beta_T, beta_schedule=cfg.ddpm.sched_mode,
@@ -44,34 +44,50 @@ class LION(object):
         sampled_list = []
         output_dict = {}
 
-        # start sample global prior
+        # start sample global prior (p_theta(z) = distribution of global shape latent DDM)
         x_T_shape = [num_samples] + latent_shape[0]
         x_noisy = torch.randn(size=x_T_shape, device='cuda')
         condition_input = None
         for i, t in enumerate(timesteps):
+            # tensor holding current timestep
             t_tensor = torch.ones(num_samples, dtype=torch.int64, device='cuda') * (t+1)
+
+            # GlobalPrior Layer: 
+            # x_noisy.shape = [1, 128, 1, 1]
+            # noise_pred.shape = [1, 128, 1, 1]
             noise_pred = global_prior(x=x_noisy, t=t_tensor.float(), 
                     condition_input=condition_input, clip_feat=clip_feat)
+            # print(f"global", x_noisy.shape, noise_pred.shape)
+
+
             x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
+
+
         sampled_list.append(x_noisy)
         output_dict['z_global'] = x_noisy
 
         condition_input = x_noisy
         condition_input = self.vae.global2style(condition_input)
 
-        # start sample local prior
+        # start sample local prior (p_phi(h | z) = DDM modeling the piont cloud-structured latents)
         x_T_shape = [num_samples] + latent_shape[1]
         x_noisy = torch.randn(size=x_T_shape, device='cuda')
 
         for i, t in enumerate(timesteps):
             t_tensor = torch.ones(num_samples, dtype=torch.int64, device='cuda') * (t+1)
+
+            # Input: x: B,ND or B,ND,1,1
             noise_pred = local_prior(x=x_noisy, t=t_tensor.float(), 
                     condition_input=condition_input, clip_feat=clip_feat)
+            # print("local", x_noisy.shape, noise_pred.shape)
+
+
+
             x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
         sampled_list.append(x_noisy)
         output_dict['z_local'] = x_noisy
 
-        # decode the latent
+        # decode the latent (p_eps(x | h, z) = LION Decoder)
         output = self.vae.sample(num_samples=num_samples, decomposed_eps=sampled_list)
         if save_img:
             out_name = plot_points(output, "/tmp/tmp.png")
