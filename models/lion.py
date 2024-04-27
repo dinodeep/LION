@@ -14,6 +14,8 @@ from diffusers import DDPMScheduler
 import torch
 from matplotlib import pyplot as plt
 
+from models.dpm_solver_pytorch import NoiseScheduleVP, model_wrapper, DPM_Solver
+
 class LION(object):
     def __init__(self, cfg):
         self.vae = VAE(cfg).cuda()
@@ -25,6 +27,17 @@ class LION(object):
                                        beta_start=cfg.ddpm.beta_1, beta_end=cfg.ddpm.beta_T, beta_schedule=cfg.ddpm.sched_mode,
                                        num_train_timesteps=cfg.ddpm.num_steps, variance_type=cfg.ddpm.model_var_type)
         self.diffusion = DiffusionDiscretized(None, None, cfg)
+
+        # augment with DPM
+        self.dpm_noise_schedule = NoiseScheduleVP(
+            schedule=cfg.ddpm.sched_mode,
+            continuous_beta_0=cfg.ddpm.beta_1,
+            continuous_beta_1=cfg.ddpm.beta_T
+        )
+
+        self.cfg = cfg
+        self.dpm_steps = cfg.ddpm.ddim_step
+
         # self.load_model(cfg)
 
     def load_model(self, model_path):
@@ -48,19 +61,48 @@ class LION(object):
         x_T_shape = [num_samples] + latent_shape[0]
         x_noisy = torch.randn(size=x_T_shape, device='cuda')
         condition_input = None
-        for i, t in enumerate(timesteps):
-            # tensor holding current timestep
-            t_tensor = torch.ones(num_samples, dtype=torch.int64, device='cuda') * (t+1)
+        # for i, t in enumerate(timesteps):
+        #     t_cont = (t / 1000) + 1 / 1000
 
-            # GlobalPrior Layer: 
-            # x_noisy.shape = [1, 128, 1, 1]
-            # noise_pred.shape = [1, 128, 1, 1]
-            noise_pred = global_prior(x=x_noisy, t=t_tensor.float(), 
-                    condition_input=condition_input, clip_feat=clip_feat)
-            # print(f"global", x_noisy.shape, noise_pred.shape)
+        #     # tensor holding current timestep
+        #     t_tensor = torch.ones(num_samples, dtype=torch.int64, device='cuda') * (t_cont+1)
+
+        #     # GlobalPrior Layer: 
+        #     # x_noisy.shape = [1, 128, 1, 1]
+        #     # noise_pred.shape = [1, 128, 1, 1]
+        #     noise_pred = global_prior(x=x_noisy, t=t_tensor.float(), 
+        #             condition_input=condition_input, clip_feat=clip_feat)
+        #     # print(f"global", x_noisy.shape, noise_pred.shape)
 
 
-            x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
+        #     x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
+
+        # self.dpm_noise_schedule = NoiseScheduleVP(
+        #     schedule=cfg.ddpm.sched_mode,
+        #     continuous_beta_0=cfg.ddpm.beta_1,
+        #     continuous_beta_1=cfg.ddpm.beta_T
+        # )
+
+        self.dpm_global_prior = model_wrapper(
+            global_prior,
+            self.dpm_noise_schedule,
+            model_type="noise",
+            model_kwargs={"clip_feat": clip_feat}
+        )
+
+        self.dpm_global_solver = DPM_Solver(
+            self.dpm_global_prior,
+            self.dpm_noise_schedule,
+            algorithm_type="dpmsolver"
+        )
+
+        x_noisy = self.dpm_global_solver.sample(
+            x_noisy,
+            steps=self.dpm_steps,
+            order=3,
+            skip_type="time_uniform",
+            method="singlestep",
+        )
 
 
         sampled_list.append(x_noisy)
@@ -81,9 +123,37 @@ class LION(object):
                     condition_input=condition_input, clip_feat=clip_feat)
             # print("local", x_noisy.shape, noise_pred.shape)
 
-
-
             x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
+
+        # self.dpm_noise_schedule = NoiseScheduleVP(
+        #     schedule=cfg.ddpm.sched_mode,
+        #     continuous_beta_0=cfg.ddpm.beta_1,
+        #     continuous_beta_1=cfg.ddpm.beta_T
+        # )
+
+        # self.dpm_local_prior = model_wrapper(
+        #     local_prior,
+        #     self.dpm_noise_schedule,
+        #     model_type="noise",
+        #     model_kwargs={"clip_feat": clip_feat, "condition_input": condition_input},
+        #     guidance_type="classifier-free",
+        #     condition=condition_input,
+        # )
+
+        # self.dpm_local_solver = DPM_Solver(
+        #     self.dpm_local_prior,
+        #     self.dpm_noise_schedule,
+        #     algorithm_type="dpmsolver"
+        # )
+
+        # x_noisy = self.dpm_local_solver.sample(
+        #     x_noisy,
+        #     steps=1000,
+        #     order=3,
+        #     skip_type="time_uniform",
+        # )
+
+
         sampled_list.append(x_noisy)
         output_dict['z_local'] = x_noisy
 

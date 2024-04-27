@@ -242,7 +242,7 @@ cfg.register_deprecated_key("ddpm.pvc")
 cfg.register_deprecated_key("ddpm.pvc.use_small_model")
 cfg.register_deprecated_key("ddpm.pvc.mlp_after_pvc")
 
-cfg.ddpm.ddim_step = 200
+cfg.ddpm.ddim_step = 20
 
 cfg.data = CN()
 cfg.data.nclass = 55
