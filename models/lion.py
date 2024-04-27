@@ -29,12 +29,6 @@ class LION(object):
         self.diffusion = DiffusionDiscretized(None, None, cfg)
 
         # augment with DPM
-        self.dpm_noise_schedule = NoiseScheduleVP(
-            schedule=cfg.ddpm.sched_mode,
-            continuous_beta_0=cfg.ddpm.beta_1,
-            continuous_beta_1=cfg.ddpm.beta_T
-        )
-
         self.cfg = cfg
         self.dpm_steps = cfg.ddpm.ddim_step
 
@@ -77,11 +71,11 @@ class LION(object):
 
         #     x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
 
-        # self.dpm_noise_schedule = NoiseScheduleVP(
-        #     schedule=cfg.ddpm.sched_mode,
-        #     continuous_beta_0=cfg.ddpm.beta_1,
-        #     continuous_beta_1=cfg.ddpm.beta_T
-        # )
+        self.dpm_noise_schedule = NoiseScheduleVP(
+            schedule=self.cfg.ddpm.sched_mode,
+            continuous_beta_0=self.cfg.ddpm.beta_1,
+            continuous_beta_1=self.cfg.ddpm.beta_T
+        )
 
         self.dpm_global_prior = model_wrapper(
             global_prior,
