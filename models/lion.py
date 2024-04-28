@@ -55,49 +55,44 @@ class LION(object):
         x_T_shape = [num_samples] + latent_shape[0]
         x_noisy = torch.randn(size=x_T_shape, device='cuda')
         condition_input = None
-        # for i, t in enumerate(timesteps):
-        #     t_cont = (t / 1000) + 1 / 1000
-
-        #     # tensor holding current timestep
-        #     t_tensor = torch.ones(num_samples, dtype=torch.int64, device='cuda') * (t_cont+1)
-
-        #     # GlobalPrior Layer: 
-        #     # x_noisy.shape = [1, 128, 1, 1]
-        #     # noise_pred.shape = [1, 128, 1, 1]
-        #     noise_pred = global_prior(x=x_noisy, t=t_tensor.float(), 
-        #             condition_input=condition_input, clip_feat=clip_feat)
-        #     # print(f"global", x_noisy.shape, noise_pred.shape)
 
 
-        #     x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
+        ###################################
+        for i, t in enumerate(timesteps):
+            t_tensor = torch.ones(num_samples, dtype=torch.int64, device='cuda') * (t+1)
+            # GlobalPrior Layer: 
+            noise_pred = global_prior(x=x_noisy, t=t_tensor.float(), 
+                    condition_input=condition_input, clip_feat=clip_feat)
+            x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
 
-        self.dpm_noise_schedule = NoiseScheduleVP(
-            schedule=self.cfg.ddpm.sched_mode,
-            continuous_beta_0=self.cfg.ddpm.beta_1,
-            continuous_beta_1=self.cfg.ddpm.beta_T
-        )
+        ###################################
+        # self.dpm_noise_schedule = NoiseScheduleVP(
+        #     schedule=self.cfg.ddpm.sched_mode,
+        #     continuous_beta_0=self.cfg.ddpm.beta_1,
+        #     continuous_beta_1=self.cfg.ddpm.beta_T
+        # )
 
-        self.dpm_global_prior = model_wrapper(
-            global_prior,
-            self.dpm_noise_schedule,
-            model_type="noise",
-            model_kwargs={"clip_feat": clip_feat}
-        )
+        # self.dpm_global_prior = model_wrapper(
+        #     global_prior,
+        #     self.dpm_noise_schedule,
+        #     model_type="noise",
+        #     model_kwargs={"clip_feat": clip_feat}
+        # )
 
-        self.dpm_global_solver = DPM_Solver(
-            self.dpm_global_prior,
-            self.dpm_noise_schedule,
-            algorithm_type="dpmsolver"
-        )
+        # self.dpm_global_solver = DPM_Solver(
+        #     self.dpm_global_prior,
+        #     self.dpm_noise_schedule,
+        #     algorithm_type="dpmsolver"
+        # )
 
-        x_noisy = self.dpm_global_solver.sample(
-            x_noisy,
-            steps=self.dpm_steps,
-            order=3,
-            skip_type="time_uniform",
-            method="singlestep",
-        )
-
+        # x_noisy = self.dpm_global_solver.sample(
+        #     x_noisy,
+        #     steps=self.dpm_steps,
+        #     order=3,
+        #     skip_type="time_uniform",
+        #     method="singlestep",
+        # )
+        ###################################
 
         sampled_list.append(x_noisy)
         output_dict['z_global'] = x_noisy
@@ -105,47 +100,50 @@ class LION(object):
         condition_input = x_noisy
         condition_input = self.vae.global2style(condition_input)
 
-        # start sample local prior (p_phi(h | z) = DDM modeling the piont cloud-structured latents)
+        # # start sample local prior (p_phi(h | z) = DDM modeling the piont cloud-structured latents)
         x_T_shape = [num_samples] + latent_shape[1]
         x_noisy = torch.randn(size=x_T_shape, device='cuda')
 
-        for i, t in enumerate(timesteps):
-            t_tensor = torch.ones(num_samples, dtype=torch.int64, device='cuda') * (t+1)
+        ###################################
+        # for i, t in enumerate(timesteps):
+        #     t_tensor = torch.ones(num_samples, dtype=torch.int64, device='cuda') * (t+1)
 
-            # Input: x: B,ND or B,ND,1,1
-            noise_pred = local_prior(x=x_noisy, t=t_tensor.float(), 
-                    condition_input=condition_input, clip_feat=clip_feat)
-            # print("local", x_noisy.shape, noise_pred.shape)
+        #     # Input: x: B,ND or B,ND,1,1
+        #     noise_pred = local_prior(x=x_noisy, t=t_tensor.float(), 
+        #             condition_input=condition_input, clip_feat=clip_feat)
 
-            x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
+        #     x_noisy = self.scheduler.step(noise_pred, t, x_noisy).prev_sample
 
-        # self.dpm_noise_schedule = NoiseScheduleVP(
-        #     schedule=cfg.ddpm.sched_mode,
-        #     continuous_beta_0=cfg.ddpm.beta_1,
-        #     continuous_beta_1=cfg.ddpm.beta_T
-        # )
+        ###################################
+        self.dpm_noise_schedule = NoiseScheduleVP(
+            schedule=self.cfg.ddpm.sched_mode,
+            continuous_beta_0=self.cfg.ddpm.beta_1,
+            continuous_beta_1=self.cfg.ddpm.beta_T
+        )
 
-        # self.dpm_local_prior = model_wrapper(
-        #     local_prior,
-        #     self.dpm_noise_schedule,
-        #     model_type="noise",
-        #     model_kwargs={"clip_feat": clip_feat, "condition_input": condition_input},
-        #     guidance_type="classifier-free",
-        #     condition=condition_input,
-        # )
+        self.dpm_local_prior = model_wrapper(
+            local_prior,
+            self.dpm_noise_schedule,
+            model_type="noise",
+            model_kwargs={"clip_feat": clip_feat, "condition_input": condition_input},
+            # guidance_type="classifier-free",
+            # unconditional_condition=None,
+        )
 
-        # self.dpm_local_solver = DPM_Solver(
-        #     self.dpm_local_prior,
-        #     self.dpm_noise_schedule,
-        #     algorithm_type="dpmsolver"
-        # )
+        self.dpm_local_solver = DPM_Solver(
+            self.dpm_local_prior,
+            self.dpm_noise_schedule,
+            algorithm_type="dpmsolver++"
+        )
 
-        # x_noisy = self.dpm_local_solver.sample(
-        #     x_noisy,
-        #     steps=1000,
-        #     order=3,
-        #     skip_type="time_uniform",
-        # )
+        x_noisy = self.dpm_local_solver.sample(
+            x_noisy,
+            steps=1000,
+            order=3,
+            skip_type="time_uniform",
+            method="singlestep"
+        )
+        ###################################
 
 
         sampled_list.append(x_noisy)

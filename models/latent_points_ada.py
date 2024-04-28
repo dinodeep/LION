@@ -137,7 +137,7 @@ class PVCNN2Unet(nn.Module):
             style = self.style_clip(style)
 
         coords_list, in_features_list = [], []
-        for i, sa_blocks  in enumerate(self.sa_layers):
+        for i, sa_blocks in enumerate(self.sa_layers):
             in_features_list.append(features)
             coords_list.append(coords)
             if i > 0 and temb is not None:
